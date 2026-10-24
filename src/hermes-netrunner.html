@@ -1,0 +1,595 @@
+<title>Hermes Netrunner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Share+Tech+Mono&family=Saira+Condensed:wght@500;700;800&display=swap">
+<style>
+/* Layout: one column "netrun path" of 14 nodes zig-zagging down a circuit trace; lessons open as a full-screen terminal overlay. Deliberately single dark theme (night-city neon). */
+:root{
+  --void:#07040f;        /* page ground */
+  --panel:#120b22;       /* raised panels */
+  --panel-2:#1b1131;
+  --line:#2e2150;        /* hairlines, locked nodes */
+  --text:#d8f6ff;        /* body text, icy */
+  --dim:#8a7fb0;         /* secondary text */
+  --cyan:#00e5ff;        /* correct / primary action */
+  --magenta:#ff2a6d;     /* wrong / danger */
+  --yellow:#f6ec13;      /* the accent: current node, XP, highlights */
+  --violet:#9d4dff;
+  --f-display:"Saira Condensed","Arial Narrow",sans-serif;
+  --f-body:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+  --f-mono:"Share Tech Mono",ui-monospace,Consolas,monospace;
+  --cut:14px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--void);color:var(--text);font-family:var(--f-body);font-size:16px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  background-image:radial-gradient(1200px 600px at 80% -10%,rgba(157,77,255,.18),transparent 60%),radial-gradient(900px 500px at -10% 40%,rgba(0,229,255,.08),transparent 60%);
+  background-attachment:fixed}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:100;background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--void)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--yellow);outline-offset:3px}
+.wrap{max-width:640px;margin:0 auto;padding-block:0 96px}
+
+/* HUD */
+.hud{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;display:flex;align-items:center;gap:12px;padding-block:12px;background:linear-gradient(var(--void) 70%,transparent);}
+.brand{font-family:var(--f-display);font-weight:800;font-size:22px;letter-spacing:.04em;text-transform:uppercase;line-height:1;margin-right:auto;white-space:nowrap}
+.brand b{color:var(--yellow)}
+.stat{display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:15px;font-variant-numeric:tabular-nums;padding:4px 8px;border:1px solid var(--line);background:var(--panel)}
+.stat svg{width:16px;height:16px}
+.st-streak{color:var(--yellow)} .st-xp{color:var(--cyan)} .st-ed{color:var(--violet)}
+.iconbtn{background:var(--panel);border:1px solid var(--line);width:34px;height:34px;display:grid;place-items:center;cursor:pointer}
+.iconbtn svg{width:18px;height:18px}
+
+/* Daily goal panel */
+.goal{display:flex;gap:16px;align-items:center;margin:8px 0 28px;padding:14px 16px;background:var(--panel);border:1px solid var(--line);
+  clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.ring{width:58px;height:58px;flex:none}
+.goal h2{margin:0;font-family:var(--f-display);font-size:20px;text-transform:uppercase;letter-spacing:.06em;line-height:1.1}
+.goal p{margin:2px 0 0;color:var(--dim);font-size:14px}
+.goal .mono{font-family:var(--f-mono);color:var(--yellow)}
+
+/* Path */
+.sector{font-family:var(--f-mono);color:var(--dim);font-size:13px;letter-spacing:.14em;text-transform:uppercase;display:flex;align-items:center;gap:10px;margin:28px 0 8px}
+.sector::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+.sector b{color:var(--text);font-weight:400}
+.path{position:relative;display:flex;flex-direction:column;align-items:center;gap:22px;padding-block:12px}
+.node{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:0;cursor:pointer;padding:0;transition:transform .15s}
+.node:hover .hex{filter:brightness(1.15)}
+.hex{width:84px;height:84px;display:grid;place-items:center;position:relative;
+  clip-path:polygon(25% 3%,75% 3%,100% 50%,75% 97%,25% 97%,0 50%);background:var(--line)}
+.hex::before{content:"";position:absolute;inset:4px;clip-path:inherit;background:var(--panel-2)}
+.hex svg{position:relative;width:34px;height:34px;color:var(--dim)}
+.node .lbl{font-family:var(--f-display);font-weight:700;font-size:18px;text-transform:uppercase;letter-spacing:.08em;line-height:1}
+.node .sub{font-family:var(--f-mono);font-size:12px;color:var(--dim);line-height:1}
+.node.done .hex{background:var(--cyan)} .node.done .hex svg{color:var(--cyan)}
+.node.cur .hex{background:var(--yellow);animation:pulse 1.8s ease-in-out infinite} .node.cur .hex svg{color:var(--yellow)}
+.node.cur .lbl{color:var(--yellow)}
+.node.locked{cursor:pointer;opacity:.55}
+.node.locked .hex svg{color:var(--line)}
+.pips{display:flex;gap:4px}
+.pips i{width:14px;height:4px;background:var(--line)}
+.pips i.on{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+.start-tag{position:absolute;top:-30px;font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;color:var(--void);background:var(--yellow);padding:2px 8px;white-space:nowrap}
+.start-tag::after{content:"";position:absolute;left:50%;bottom:-5px;margin-left:-5px;border:5px solid transparent;border-bottom:0;border-top-color:var(--yellow)}
+@keyframes pulse{0%,100%{filter:drop-shadow(0 0 0 rgba(246,236,19,0))}50%{filter:drop-shadow(0 0 14px rgba(246,236,19,.7))}}
+.trace{position:absolute;inset:0;pointer-events:none;overflow:visible}
+
+.foot{margin-top:40px;color:var(--dim);font-size:13px;font-family:var(--f-mono);display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between}
+.linkbtn{background:none;border:0;color:var(--dim);text-decoration:underline;cursor:pointer;font-family:var(--f-mono);font-size:13px;padding:0}
+.linkbtn:hover{color:var(--text)}
+
+/* Overlay screens */
+.screen{position:fixed;inset:0;z-index:50;background:var(--void);display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top,0px) max(16px,env(safe-area-inset-right,0px)) env(safe-area-inset-bottom,0px) max(16px,env(safe-area-inset-left,0px));
+  background-image:radial-gradient(800px 400px at 50% -20%,rgba(157,77,255,.16),transparent 70%)}
+.screen-in{width:100%;max-width:680px;margin:0 auto;flex:1;display:flex;flex-direction:column;min-height:0}
+.ltop{display:flex;align-items:center;gap:14px;padding-block:14px}
+.bar{flex:1;height:12px;background:var(--panel-2);border:1px solid var(--line);position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;width:0;background:linear-gradient(90deg,var(--violet),var(--cyan));box-shadow:0 0 12px var(--cyan);transition:width .35s}
+.hearts{display:flex;gap:3px;color:var(--magenta);font-family:var(--f-mono)}
+.hearts svg{width:18px;height:18px}
+.hearts .gone{color:var(--line)}
+.lbody{flex:1;overflow-y:auto;padding-block:8px 24px;min-height:0}
+.kicker{font-family:var(--f-mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--violet);margin:0 0 6px}
+.q{font-family:var(--f-body);font-weight:700;font-size:22px;line-height:1.3;margin:0 0 20px;text-wrap:balance}
+.q code,.why code,.brief code,.shard code{font-family:var(--f-mono);font-weight:400;color:var(--yellow);background:rgba(246,236,19,.07);padding:0 4px;word-break:break-word}
+.opts{display:grid;gap:10px}
+.opt{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:14px 14px;background:var(--panel);border:1px solid var(--line);border-bottom-width:3px;cursor:pointer;font-size:16px;line-height:1.35;min-width:0}
+.opt:hover{border-color:var(--dim)}
+.opt .k{font-family:var(--f-mono);font-size:12px;color:var(--dim);border:1px solid var(--line);min-width:22px;height:22px;display:grid;place-items:center;flex:none;margin-top:1px}
+.opt.sel{border-color:var(--cyan);background:rgba(0,229,255,.08);box-shadow:0 0 0 1px var(--cyan) inset}
+.opt.sel .k{color:var(--cyan);border-color:var(--cyan)}
+.opt.right{border-color:var(--cyan);background:rgba(0,229,255,.14)}
+.opt.wrong{border-color:var(--magenta);background:rgba(255,42,109,.12)}
+.opt .mono{font-family:var(--f-mono)}
+.tf{grid-template-columns:1fr 1fr}
+
+/* build-a-command */
+.term{background:#030208;border:1px solid var(--line);padding:14px;min-height:64px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--f-mono)}
+.term .ps{color:var(--cyan);margin-right:2px}
+.term:empty::after{content:"tap tokens below";color:var(--dim)}
+.bank{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.tok{font-family:var(--f-mono);font-size:15px;padding:8px 12px;background:var(--panel-2);border:1px solid var(--line);border-bottom-width:3px;cursor:pointer;color:var(--text)}
+.tok:hover{border-color:var(--yellow)}
+.tok.used{visibility:hidden}
+.term .tok{background:rgba(0,229,255,.08);border-color:var(--cyan)}
+
+/* match */
+.match{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.match .opt{justify-content:center;text-align:center;font-size:15px;min-height:58px;align-items:center}
+.match .opt.ok{opacity:.35;pointer-events:none;border-color:var(--cyan)}
+.match .opt.bad{animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+
+/* briefing */
+.brief{display:grid;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);padding:16px;clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,0 100%)}
+.card h3{margin:0 0 6px;font-family:var(--f-display);font-size:16px;letter-spacing:.14em;text-transform:uppercase}
+.card p{margin:0;max-width:62ch}
+.card.what h3{color:var(--cyan)} .card.rig h3{color:var(--yellow)} .card.pay h3{color:var(--magenta)}
+.card ul{margin:6px 0 0;padding-left:18px} .card li{margin:2px 0}
+.unit-title{font-family:var(--f-display);font-weight:800;font-size:clamp(40px,10vw,64px);line-height:.9;text-transform:uppercase;margin:4px 0 4px;letter-spacing:.02em;position:relative}
+.unit-title span{color:var(--yellow)}
+.glitch{position:relative;display:inline-block}
+.glitch::before,.glitch::after{content:attr(data-t);position:absolute;inset:0;pointer-events:none}
+.glitch::before{color:var(--magenta);transform:translate(2px,0);clip-path:inset(0 0 60% 0);opacity:.8;animation:gl 3.2s infinite steps(1)}
+.glitch::after{color:var(--cyan);transform:translate(-2px,0);clip-path:inset(55% 0 0 0);opacity:.8;animation:gl 2.7s infinite steps(1) reverse}
+@keyframes gl{0%,92%{transform:translate(0,0)}93%{transform:translate(3px,-1px)}96%{transform:translate(-3px,1px)}}
+
+/* bottom sheet */
+.sheet{border-top:1px solid var(--line);padding-block:14px max(14px,env(safe-area-inset-bottom,0px));background:var(--void)}
+.sheet.good{background:linear-gradient(0deg,rgba(0,229,255,.12),rgba(0,229,255,.04));border-top-color:var(--cyan)}
+.sheet.bad{background:linear-gradient(0deg,rgba(255,42,109,.14),rgba(255,42,109,.04));border-top-color:var(--magenta)}
+.sheet-in{max-width:680px;margin:0 auto;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.verdict{flex:1 1 300px;min-width:0}
+.verdict h4{margin:0;font-family:var(--f-display);font-size:22px;letter-spacing:.06em;text-transform:uppercase}
+.good .verdict h4{color:var(--cyan)} .bad .verdict h4{color:var(--magenta)}
+.why{margin:2px 0 0;font-size:15px;max-width:62ch}
+.btn{font-family:var(--f-display);font-weight:800;font-size:18px;letter-spacing:.1em;text-transform:uppercase;padding:13px 26px;border:0;cursor:pointer;background:var(--yellow);color:var(--void);
+  clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);margin-left:auto}
+.btn:disabled{background:var(--line);color:var(--dim);cursor:not-allowed}
+.btn.cy{background:var(--cyan)} .btn.mg{background:var(--magenta);color:#fff}
+.btn.ghost{background:transparent;color:var(--text);box-shadow:inset 0 0 0 1px var(--line);clip-path:none}
+
+/* end screens */
+.end{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:16px;padding-block:24px}
+.end .big{font-family:var(--f-display);font-weight:800;font-size:clamp(46px,12vw,84px);line-height:.88;text-transform:uppercase;margin:0}
+.end .big.cy{color:var(--cyan)} .end .big.mg{color:var(--magenta)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;width:100%}
+.tile{border:1px solid var(--line);background:var(--panel);padding:12px}
+.tile small{display:block;font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase}
+.tile b{font-family:var(--f-mono);font-size:26px;font-weight:400;font-variant-numeric:tabular-nums}
+.end p{margin:0;max-width:56ch;color:var(--dim)}
+.row{display:flex;gap:10px;flex-wrap:wrap;width:100%}
+.row .btn{margin-left:0}
+
+/* shard (reference) */
+.shard table{width:100%;border-collapse:collapse;font-size:14px}
+.shard td{border-top:1px solid var(--line);padding:8px 6px;vertical-align:top}
+.shard td:first-child{font-family:var(--f-mono);color:var(--yellow);white-space:nowrap}
+.tblwrap{overflow-x:auto}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:90;background:var(--panel-2);border:1px solid var(--yellow);color:var(--text);font-family:var(--f-mono);font-size:14px;padding:10px 14px;max-width:calc(100% - 32px)}
+
+@media (max-width:440px){
+  .brand{font-size:18px}.stat{padding:3px 6px;font-size:14px}.st-ed{display:none}
+  .q{font-size:19px}.tiles b{font-size:22px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap" id="home">
+  <header class="hud">
+    <div class="brand">Hermes<b>//</b>Netrunner</div>
+    <div class="stat st-streak" title="Day streak"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><span id="sStreak">0</span></div>
+    <div class="stat st-xp" title="Total XP"><span id="sXp">0</span>XP</div>
+    <div class="stat st-ed" title="Eddies"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="M9 9h6M9 12h5M9 15h6"/></svg><span id="sEd">0</span></div>
+    <button class="iconbtn" id="sndBtn" aria-label="Toggle sound" title="Sound"></button>
+  </header>
+
+  <section class="goal" aria-label="Daily goal">
+    <svg class="ring" viewBox="0 0 60 60"><circle cx="30" cy="30" r="25" fill="none" stroke="var(--line)" stroke-width="6"/><circle id="ringArc" cx="30" cy="30" r="25" fill="none" stroke="var(--yellow)" stroke-width="6" stroke-dasharray="157" stroke-dashoffset="157" transform="rotate(-90 30 30)" stroke-linecap="butt"/><text id="ringTxt" x="30" y="35" text-anchor="middle" fill="var(--text)" font-family="Share Tech Mono,monospace" font-size="14">0</text></svg>
+    <div>
+      <h2 id="goalHead">Daily uplink: 0 / 30 XP</h2>
+      <p id="goalSub">One lesson is about 12 XP. Three a day keeps the streak alive and the chrome sharp.</p>
+    </div>
+  </section>
+
+  <div id="map"></div>
+
+  <div class="foot">
+    <span>Covers a fresh Hermes Agent install · v0.18 command set</span>
+    <span><button class="linkbtn" id="unlockBtn">Unlock all nodes</button> · <button class="linkbtn" id="resetBtn">Reset progress</button></span>
+  </div>
+</div>
+
+<div class="screen" id="lesson" hidden>
+  <div class="screen-in">
+    <div class="ltop">
+      <button class="iconbtn" id="quitBtn" aria-label="Quit lesson"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 5l14 14M19 5 5 19"/></svg></button>
+      <div class="bar"><i id="prog"></i></div>
+      <div class="hearts" id="hearts"></div>
+    </div>
+    <div class="lbody" id="lbody"></div>
+  </div>
+  <div class="sheet" id="sheet"><div class="sheet-in"><div class="verdict" id="verdict"></div><button class="btn" id="mainBtn" disabled>Check</button></div></div>
+</div>
+
+<script>
+/* ---------- icons ---------- */
+const IC={
+ files:'<path d="M4 4h6l2 2h8v14H4z"/><path d="M8 12h8M8 16h5"/>',
+ models:'<rect x="6" y="6" width="12" height="12"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/><path d="M10 10h4v4h-4z"/>',
+ logs:'<path d="M4 4h16v16H4z"/><path d="M7 8l3 3-3 3M12 15h5"/>',
+ cron:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+ skills:'<path d="M5 3h11l3 3v15H5z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+ plugins:'<path d="M9 2v5M15 2v5"/><path d="M6 7h12v5a6 6 0 0 1-12 0z"/><path d="M12 18v4"/>',
+ mcp:'<circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M7.3 11 16.8 6M7.3 13l9.5 5"/>',
+ channels:'<path d="M3 5h18v11H9l-5 4v-4H3z"/><path d="M7 9h10M7 12h6"/>',
+ webhooks:'<path d="M9 7a3 3 0 1 1 4 2.8L16 15"/><circle cx="17" cy="17" r="2.5"/><path d="M7 17h7"/><circle cx="5" cy="17" r="2.5"/><path d="M5 14.5 8.5 9"/>',
+ pairing:'<rect x="4" y="10" width="16" height="11"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15.5" r="1.5"/>',
+ profiles:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-4 3-6 7-6s7 2 7 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.5.6 4 2.6 4 6"/>',
+ config:'<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+ keys:'<circle cx="8" cy="14" r="4"/><path d="M11 11 20 2M16 6l3 3M14 8l2 2"/>',
+ system:'<rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/><path d="M7 12l2-3 2 2 2-4 2 5"/>'
+};
+const svg=(k,extra='')=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="miter" ${extra}>${IC[k]}</svg>`;
+const HEART='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21 3 12.5A5 5 0 0 1 12 6a5 5 0 0 1 9 6.5z"/></svg>';
+
+/* ---------- curriculum: a fresh Hermes Agent install (v0.18 command set) ---------- */
+const UNITS=[
+{id:'files',name:'Files',sector:'Sector 1 · The Deck',
+ what:'Everything Hermes knows lives in one home folder, <code>~/.hermes</code>: config, API keys, persona, memories, skills, scripts, logs and the session database. All of it is plain files you can read.',
+ rig:'Edit <code>SOUL.md</code> to give your agent its voice. Put a shell script in <code>~/.hermes/scripts/</code> and a cron job can run it. Before you try anything risky, run <code>hermes backup -q</code> to snapshot the critical files.',
+ pay:'When something misbehaves you know which file to open. Everything is text you can read, diff and back up.',
+ cmds:[['~/.hermes/config.yaml','Settings: model, toolsets, timezone, platforms'],['~/.hermes/.env','API keys and tokens'],['~/.hermes/SOUL.md','Persona and voice'],['~/.hermes/scripts/','Scripts that cron jobs run'],['~/.hermes/state.db','Session and message history'],['hermes backup -q','Quick zip of config, state.db, .env, auth, cron'],['hermes import <zip>','Restore a backup']],
+ qs:[
+ {t:'mc',q:'You want your agent to sound less formal. Which file do you edit?',o:['<code>SOUL.md</code>','<code>config.yaml</code>','<code>state.db</code>','<code>.env</code>'],a:0,why:'<code>SOUL.md</code> is the persona prompt. Config is wiring, .env is secrets, state.db is history.'},
+ {t:'match',q:'Match each folder to what it holds.',p:[['scripts/','cron job scripts'],['memories/','long-term memory'],['logs/','agent + gateway logs'],['skills/','SKILL.md packs']]},
+ {t:'mc',q:'Where should a script live so <code>hermes cron create --script</code> can find it?',o:['<code>~/.hermes/scripts/</code>','<code>~/.hermes/cron/</code>','<code>~/.hermes/hooks/</code>','Anywhere on the PATH'],a:0,why:'<code>--script</code> takes a path under <code>~/.hermes/scripts/</code>. The cron folder only stores job definitions.'},
+ {t:'build',q:'Take a fast snapshot of just the critical state files before you experiment.',ans:['hermes','backup','-q'],x:['--full','export'],why:'<code>-q</code> grabs config, state.db, .env, auth and cron. A plain <code>hermes backup</code> also zips skills and sessions.'},
+ {t:'tf',q:'<code>hermes backup</code> also zips the hermes-agent source code.',a:false,why:'Backups cover your data and settings and leave out the codebase. You can always reinstall the code.'},
+ {t:'build',q:'An experiment went wrong. Restore from your backup zip.',ans:['hermes','import','backup.zip'],x:['restore','backup','-q'],why:'<code>hermes import</code> restores a zip made by <code>hermes backup</code>.'}
+ ]},
+{id:'models',name:'Models',sector:'Sector 1 · The Deck',
+ what:'The model is the brain. <code>hermes model</code> picks the default provider and model. <code>hermes fallback</code> lists providers to try when the main one fails. <code>hermes moa</code> sets up Mixture-of-Agents slots.',
+ rig:'Run a fast local model, for example through Ollama, for everyday chat. Add a bigger cloud model as a fallback so replies keep coming when your local server is down. Use <code>-m</code> to try a different model for one session.',
+ pay:'You can change brains without touching anything else. Fallbacks keep your agent answering when one provider goes offline.',
+ cmds:[['hermes model','Pick the default model and provider'],['hermes -m <model>','Use a model for one session'],['hermes fallback','Manage fallback providers'],['hermes config get model','Show the resolved model block'],['hermes moa','Mixture-of-Agents slots']],
+ qs:[
+ {t:'mc',q:'When does a fallback provider take over?',o:['When the main model returns an error','When the question is hard','When the prompt is long','Every 10th message, to balance load'],a:0,why:'Fallback fires on errors, not difficulty.'},
+ {t:'build',q:'Open the interactive picker for the default model.',ans:['hermes','model'],x:['config','--list','set'],why:'<code>hermes model</code> with no arguments opens the picker.'},
+ {t:'tf',q:'<code>hermes -m &lt;model&gt;</code> changes the model for that session without touching your default.',a:true,why:'The flag applies to one session. <code>hermes model</code> changes the saved default.'},
+ {t:'tf',q:'Every model handles tool calls equally well.',a:false,why:'Some smaller models describe what they would do instead of calling the tool. If tools never fire, test a different model.'},
+ {t:'mc',q:'Which command prints the model settings Hermes will actually use?',o:['<code>hermes config get model</code>','<code>hermes model --dry-run</code>','<code>hermes logs model</code>','<code>hermes status --models</code>'],a:0,why:'<code>config get</code> prints the resolved value of any key, including the whole model block.'},
+ {t:'match',q:'Match the command to its job.',p:[['hermes model','set the default'],['hermes fallback','backup providers'],['hermes moa','mixture of agents'],['--provider','one-off provider']]}
+ ]},
+{id:'logs',name:'Logs',sector:'Sector 1 · The Deck',
+ what:'<code>hermes logs</code> reads agent.log, errors.log, gateway.log and gui.log, with filters for level, time window, session and component.',
+ rig:'If a chat message gets no reply, check <code>gateway</code> first. If a scheduled job stays quiet, filter to <code>--component cron</code>. MCP servers write their errors to <code>logs/mcp-stderr.log</code>.',
+ pay:'You stop guessing. One filtered command shows whether a key expired, a tool failed or a job timed out.',
+ cmds:[['hermes logs','Last 50 lines of agent.log'],['hermes logs -f','Follow live'],['hermes logs errors','errors.log'],['hermes logs gateway --since 30m','Recent gateway activity'],['hermes logs --level WARNING','Warnings and up'],['hermes logs --component cron','Only cron lines']],
+ qs:[
+ {t:'build',q:'Your morning job never sent anything. Show only cron-related lines.',ans:['hermes','logs','--component','cron'],x:['--level','gateway','-f'],why:'<code>--component cron</code> filters to the scheduler. Add <code>--since 3h</code> to narrow the window.'},
+ {t:'mc',q:'You sent your bot a message on Telegram and got no reply. Which log first?',o:['gateway','gui','desktop','update'],a:0,why:'Messaging platforms run inside the gateway process.'},
+ {t:'build',q:'Watch the gateway log live while you send a test message.',ans:['hermes','logs','gateway','-f'],x:['--since','tail','errors'],why:'<code>-f</code> follows the file like <code>tail -f</code>.'},
+ {t:'tf',q:'<code>hermes logs</code> with no arguments shows errors.log.',a:false,why:'The default is agent.log. Errors has its own name: <code>hermes logs errors</code>.'},
+ {t:'mc',q:'An MCP server\'s tools vanished from your chats. Where is the crash output most likely?',o:['<code>logs/mcp-stderr.log</code>','<code>logs/gui.log</code>','<code>logs/update.log</code>','<code>state.db</code>'],a:0,why:'Stdio MCP servers write their stderr to mcp-stderr.log.'},
+ {t:'match',q:'Match the flag to what it does.',p:[['-n 100','show 100 lines'],['--since 2h','last two hours'],['--level ERROR','errors only'],['--session ab12','one conversation']]}
+ ]},
+{id:'cron',name:'Cron',sector:'Sector 2 · Automation',
+ what:'Cron runs jobs on a schedule. A job can be a prompt for the agent or a script. By default a script\'s output is fed into the agent\'s prompt. With <code>--no-agent</code> the output is delivered word for word and no model runs.',
+ rig:'Schedule a 7:00 morning briefing that summarizes your calendar and the weather and sends it to Telegram. Or have a script check disk space every few hours and only message you when it is low.',
+ pay:'Your agent works while you are away. Script-only jobs cannot invent anything, so what they report is exactly what the script found.',
+ cmds:[['hermes cron list','All jobs with last-run status'],['hermes cron create "0 7 * * *" "Brief me on today"','Agent job'],['hermes cron create "every 2h" --script check.sh --no-agent','Script-only job'],['hermes cron run <id>','Fire on the next tick'],['hermes cron pause <id>','Pause without deleting'],['hermes cron status','Is the scheduler running?']],
+ qs:[
+ {t:'mc',q:'What does <code>40 9,13,17,21 * * *</code> mean?',o:['At :40 past 9am, 1pm, 5pm and 9pm daily','Every 40 minutes between 9 and 21','At 9:40 on the 13th, 17th and 21st','Forty times a day'],a:0,why:'Minute 40, hours 9, 13, 17 and 21, every day, in the timezone from your config.'},
+ {t:'mc',q:'When does <code>0 9 * * 1</code> run?',o:['Mondays at 9:00','The 1st of each month at 9:00','Daily at 9:01','January 9th'],a:0,why:'The fifth field is day of week, and 1 is Monday. <code>0 9 1 * *</code> would be the 1st of the month.'},
+ {t:'tf',q:'With <code>--no-agent</code>, an empty script output means nothing is sent.',a:true,why:'Empty output means silent. A script can stay quiet on days with nothing to report.'},
+ {t:'build',q:'Create a Friday 4pm script job that posts its output straight to Telegram.',ans:['hermes','cron','create','"0 16 * * 5"','--script','weekly.sh','--no-agent','--deliver','telegram'],x:['--skill','"0 4 * * 5"'],why:'Script, no model, delivered word for word. <code>0 4</code> would be 4am.'},
+ {t:'mc',q:'You want to skip a job for a while but keep it. Which command?',o:['<code>hermes cron pause &lt;id&gt;</code>','<code>hermes cron remove &lt;id&gt;</code>','<code>hermes cron tick</code>','<code>hermes cron edit --repeat 0</code>'],a:0,why:'Pause keeps the job. <code>resume</code> brings it back.'},
+ {t:'mc',q:'A job uses <code>--script</code> but not <code>--no-agent</code>. What happens to the script\'s output?',o:['It is added to the agent\'s prompt for that run','It is sent to you as-is','It is discarded','It is saved as a skill'],a:0,why:'Default mode gives the agent fresh data to reason about. <code>--no-agent</code> skips the model entirely.'}
+ ]},
+{id:'skills',name:'Skills',sector:'Sector 2 · Automation',
+ what:'A skill is a folder with a <code>SKILL.md</code>: instructions, plus optional scripts, that the model loads when a task matches. Hermes comes with bundled skills, and you can add more from registries like skills.sh, GitHub and ClawHub, or write your own.',
+ rig:'Write a "weekly-review" skill that tells the agent how you like your week summarized: which sources to check, what to rank, what format to send. Then "do my weekly review" works the same way every time.',
+ pay:'You teach a routine once in plain English and it works from chat, cron and the dashboard. No code and no restart.',
+ cmds:[['hermes skills search <q>','Search registries'],['hermes skills inspect <id>','Preview before install'],['hermes skills install <id>','Install'],['hermes skills list','Installed skills'],['hermes skills audit','Re-scan hub skills'],['hermes skills diff <name>','How your edit differs from stock']],
+ qs:[
+ {t:'mc',q:'What is the core file of a skill?',o:['<code>SKILL.md</code>','<code>skill.py</code>','<code>manifest.json</code>','<code>plugin.yaml</code>'],a:0,why:'Markdown instructions with frontmatter. Scripts are optional extras.'},
+ {t:'build',q:'Preview a hub skill\'s contents before you install it.',ans:['hermes','skills','inspect','openai/skills/skill-creator'],x:['install','--force'],why:'Inspect first. Skills can carry scripts, so this is your supply-chain check.'},
+ {t:'tf',q:'A skill runs as Python code on every message, even when the model does not choose it.',a:false,why:'That describes a plugin. A skill is guidance the model pulls in when it is relevant.'},
+ {t:'mc',q:'You edited a bundled skill and want to see what you changed before running <code>hermes update</code>.',o:['<code>hermes skills diff &lt;name&gt;</code>','<code>hermes skills reset &lt;name&gt;</code>','<code>hermes skills publish</code>','<code>hermes curator pause</code>'],a:0,why:'<code>diff</code> shows your changes. <code>reset</code> would throw them away.'},
+ {t:'mc',q:'Which job suits a skill best?',o:['"When I say triage, read my open issues, rank them, post a summary"','Catch every message that starts with <code>note:</code>','Store a bot token','Run a script at 07:00 daily'],a:0,why:'A multi-step routine described in words is a skill. Keyword interception is a plugin, tokens go in .env, and scheduling is cron.'},
+ {t:'match',q:'Match the command to the job.',p:[['search','find in registries'],['list-modified','bundled skills you edited'],['bundles','one alias for several skills'],['curator','background upkeep']]}
+ ]},
+{id:'plugins',name:'Plugins',sector:'Sector 2 · Automation',
+ what:'Plugins are Python code that hooks into Hermes itself, for example before a message reaches the model. They run on every matching event, with no model involved. You install them from Git.',
+ rig:'Install or write a plugin that catches messages starting with <code>note:</code> and appends them straight to your notes file. It works the same every time, whatever the model is doing.',
+ pay:'You get behavior you can count on. Code runs the same way every time, so you use plugins for the jobs that must never be skipped.',
+ cmds:[['hermes plugins list','Installed plugins'],['hermes plugins install owner/repo','Install from Git'],['hermes plugins disable <name>','Turn off, keep files'],['hermes plugins enable <name>','Turn back on'],['hermes plugins update <name>','Pull latest'],['hermes plugins remove <name>','Uninstall']],
+ qs:[
+ {t:'mc',q:'Why build a <code>note:</code> shortcut as a plugin and not a skill?',o:['It must work every time, without relying on the model to call a tool','Skills cannot write files','Plugins are faster to write','Telegram only supports plugins'],a:0,why:'Models sometimes answer in words instead of calling a tool. A plugin makes the behavior certain.'},
+ {t:'build',q:'Temporarily turn off a plugin called <code>word-count</code> without uninstalling it.',ans:['hermes','plugins','disable','word-count'],x:['remove','--force'],why:'Disable keeps the files and settings. <code>remove</code> deletes them.'},
+ {t:'tf',q:'Disabling a plugin deletes its files.',a:false,why:'Disabled plugins stay on disk. <code>hermes plugins enable</code> turns them back on.'},
+ {t:'match',q:'Skill or plugin?',p:[['SKILL.md instructions','skill'],['Python lifecycle hook','plugin'],['model decides to use it','skill'],['fires on every message','plugin']]},
+ {t:'build',q:'Install a plugin from GitHub and enable it in one step.',ans:['hermes','plugins','install','owner/repo','--enable'],x:['--no-enable','add'],why:'<code>owner/repo</code> shorthand works. <code>--enable</code> skips the confirmation prompt.'}
+ ]},
+{id:'mcp',name:'MCP',sector:'Sector 3 · The Net',
+ what:'MCP (Model Context Protocol) servers give Hermes extra tools through a standard connection. Hermes can also act as an MCP server for other agents with <code>hermes mcp serve</code>.',
+ rig:'Connect a GitHub MCP so your agent can read issues and open pull requests, or a database MCP so it can query your data. <code>hermes mcp catalog</code> lists approved servers you can install in one step.',
+ pay:'One protocol connects all your tools. Switching off tools you never use with <code>configure</code> shrinks the prompt, which makes replies faster.',
+ cmds:[['hermes mcp list','Configured servers'],['hermes mcp test <name>','Check the connection'],['hermes mcp configure <name>','Toggle which tools are on'],['hermes mcp add <name> --command ...','Add a stdio server'],['hermes mcp catalog','Approved one-click MCPs'],['hermes mcp serve','Expose Hermes over MCP']],
+ qs:[
+ {t:'build',q:'Your <code>github</code> MCP tools are failing. Check the server connection.',ans:['hermes','mcp','test','github'],x:['list','reauth'],why:'<code>test</code> connects and runs tool discovery, so you see the error directly.'},
+ {t:'mc',q:'A server exposes 40 tools and you use 3. Best move?',o:['<code>hermes mcp configure &lt;name&gt;</code> and switch off the rest','Remove the server','Raise the context window','Add the server twice'],a:0,why:'Every tool schema goes into the prompt. Fewer tools means a smaller prompt and a faster first reply.'},
+ {t:'mc',q:'What does <code>hermes mcp serve</code> do?',o:['Lets other agents use Hermes over MCP','Starts every configured server','Opens the catalog picker','Restarts the gateway'],a:0,why:'It flips the direction. Hermes becomes the server instead of the client.'},
+ {t:'build',q:'Install the n8n server from the approved catalog.',ans:['hermes','mcp','install','n8n'],x:['add','--url'],why:'<code>install</code> pulls a catalog entry by name. <code>add</code> is for servers you configure yourself.'},
+ {t:'match',q:'Match the situation to the <code>mcp add</code> option.',p:[['local stdio program','--command'],['remote HTTP/SSE','--url'],['needs env var','--env KEY=VAL'],['known preset','--preset']]}
+ ]},
+{id:'channels',name:'Channels',sector:'Sector 3 · The Net',
+ what:'Channels are the messaging platforms the gateway connects to: Telegram, Discord, Slack, WhatsApp, Signal and more. <code>hermes send</code> pushes text to any of them from a script, with no model involved.',
+ rig:'Run <code>hermes gateway setup</code>, connect a Telegram bot, and your agent is in your pocket. A backup script can then end with <code>hermes send -t telegram "backup done"</code> to tell you it finished.',
+ pay:'You can reach your agent from your phone anywhere. Any script on your machine can notify you without extra services.',
+ cmds:[['hermes gateway setup','Add or configure platforms'],['hermes gateway status','Is the gateway up?'],['hermes gateway restart','Restart after .env changes'],['hermes gateway run','Foreground (for WSL, Docker, Termux)'],['hermes send -t telegram "msg"','Push from a script'],['hermes tools --summary','Tools per platform']],
+ qs:[
+ {t:'build',q:'From a shell script, tell yourself on Telegram that the backup finished.',ans:['hermes','send','-t','telegram','"backup done"'],x:['chat','--deliver'],why:'<code>hermes send</code> reuses the gateway\'s credentials. For bot-token platforms the gateway does not even need to be running.'},
+ {t:'tf',q:'<code>hermes send</code> runs the message through the model first.',a:false,why:'No model and no agent loop. It sends your text straight to the platform.'},
+ {t:'mc',q:'You changed your bot token in <code>.env</code>. What next?',o:['<code>hermes gateway restart</code>','Nothing, it reloads by itself','<code>hermes cron tick</code>','<code>hermes skills update</code>'],a:0,why:'config.yaml reloads by itself, but .env is read at startup. Restart the gateway.'},
+ {t:'mc',q:'You want Telegram to have fewer tools than the terminal, so phone replies stay fast. Which command?',o:['<code>hermes tools</code>','<code>hermes mcp catalog</code>','<code>hermes profile alias</code>','<code>hermes moa</code>'],a:0,why:'Tools are configured per platform. <code>--summary</code> shows what each one has.'},
+ {t:'tf',q:'Inside WSL or Docker, the help recommends <code>hermes gateway run</code> in the foreground.',a:true,why:'Those environments often lack a normal service manager, so foreground mode is more reliable there.'},
+ {t:'match',q:'Match the send target to where it lands.',p:[['telegram','home chat'],['telegram:-100123','a specific chat'],['discord:#ops','named channel'],['signal:+1555...','a phone number']]}
+ ]},
+{id:'webhooks',name:'Webhooks',sector:'Sector 3 · The Net',
+ what:'Webhooks start the agent when an outside service POSTs to <code>/webhooks/&lt;name&gt;</code>. Each route has a prompt template that pulls fields from the payload, plus a delivery target. A fresh install has the webhook platform switched off.',
+ rig:'Turn it on with <code>hermes gateway setup</code>. Then point GitHub at a route so every new issue gets a short summary on Discord, or have your CI post when a deploy finishes.',
+ pay:'Cron runs on the clock and webhooks run on events. You hear about things the moment they happen, with no polling.',
+ cmds:[['hermes webhook subscribe <name> --prompt "..."','Create a route'],['--deliver telegram','Where results go'],['--deliver-only','Skip the agent, send rendered text'],['--secret','HMAC secret (auto if omitted)'],['hermes webhook test <name>','Send a test POST'],['hermes webhook list','All routes']],
+ qs:[
+ {t:'mc',q:'Cron or webhook for "tell me when my deploy finishes"?',o:['Webhook: the deploy is an event','Cron every minute','A skill','A profile'],a:0,why:'Events come to you. Polling every minute wastes runs and still lags.'},
+ {t:'build',q:'Create a route named <code>deploys</code> that reports to Telegram.',ans:['hermes','webhook','subscribe','deploys','--deliver','telegram'],x:['cron','--no-agent'],why:'The URL becomes <code>/webhooks/deploys</code>. Add <code>--prompt</code> with payload fields like <code>{deployment.url}</code>.'},
+ {t:'tf',q:'On a fresh install, webhooks work as soon as you subscribe a route.',a:false,why:'The webhook platform starts off. Enable it with <code>hermes gateway setup</code> first.'},
+ {t:'mc',q:'What does <code>--secret</code> protect against?',o:['Strangers POSTing fake events to your route','Leaking your API keys','Too many tokens per turn','Overlapping cron jobs'],a:0,why:'The HMAC signature proves the payload came from the real sender.'},
+ {t:'mc',q:'You want the payload text forwarded as-is, with no model. Which flag?',o:['<code>--deliver-only</code>','<code>--no-agent</code>','<code>--skills</code>','<code>--events</code>'],a:0,why:'<code>--deliver-only</code> is the webhook version of cron\'s <code>--no-agent</code>.'}
+ ]},
+{id:'pairing',name:'Pairing',sector:'Sector 4 · Identity',
+ what:'Pairing controls who can DM your bot. An unknown user gets a one-time code, and the bot will not serve them until you approve that code from your terminal.',
+ rig:'A housemate wants to use your bot to add things to a shared shopping list. They DM it, get a code, tell you the code, and you approve it. When they move out, one command revokes access.',
+ pay:'Your bot can reach your files and tools. Pairing means a stranger who finds its username gets nothing.',
+ cmds:[['hermes pairing list','Pending + approved users'],['hermes pairing approve telegram <code>','Grant access'],['hermes pairing revoke','Remove a user'],['hermes pairing clear-pending','Wipe stale codes']],
+ qs:[
+ {t:'build',q:'Your housemate DMed the bot and got code <code>K7Q2XM</code>. Approve it.',ans:['hermes','pairing','approve','telegram','K7Q2XM'],x:['list','grant'],why:'Platform first, then the code.'},
+ {t:'tf',q:'The person asking for access approves themselves by sending the code back to the bot.',a:false,why:'Only you can approve, from your terminal with <code>hermes pairing approve</code>. The code just tells you who is asking.'},
+ {t:'mc',q:'A stranger found your bot and spammed it. Clean up the waiting codes.',o:['<code>hermes pairing clear-pending</code>','<code>hermes pairing revoke --all</code>','<code>hermes gateway stop</code>','Delete state.db'],a:0,why:'This clears codes that were never approved. Approved users are untouched.'},
+ {t:'match',q:'Match the command.',p:[['list','see who has access'],['approve','grant'],['revoke','remove'],['clear-pending','wipe codes']]},
+ {t:'mc',q:'Which platforms does <code>pairing approve</code> accept?',o:['telegram, discord, slack, whatsapp','Only telegram','Any URL','Email addresses'],a:0,why:'The help text names those four platforms.'}
+ ]},
+{id:'profiles',name:'Profiles',sector:'Sector 4 · Identity',
+ what:'A profile is a fully separate Hermes with its own config, keys, persona, skills, memory, sessions and gateway. A fresh install has one, called <code>default</code>. You can clone it, export it, and switch with <code>use</code>.',
+ rig:'Clone a <code>lab</code> profile to try a new model or a risky plugin. Or keep a <code>work</code> profile with work tools and a separate memory, so your two worlds never mix.',
+ pay:'You get a sandbox. Break the experimental profile as much as you like and your everyday agent keeps working.',
+ cmds:[['hermes profile list','All profiles'],['hermes profile create lab --clone','Copy config, .env, SOUL.md, skills'],['hermes profile use lab','Make lab the sticky default'],['hermes profile export <name>','Archive it'],['hermes gateway list','Gateway status per profile']],
+ qs:[
+ {t:'build',q:'Make a sandbox called <code>lab</code> that starts with your current config, keys, persona and skills.',ans:['hermes','profile','create','lab','--clone'],x:['--clone-all','use'],why:'<code>--clone</code> copies the setup files. <code>--clone-all</code> would also copy all state.'},
+ {t:'tf',q:'Memories you add in <code>lab</code> also show up in <code>default</code>.',a:false,why:'Profiles are isolated: separate memory, sessions and state.'},
+ {t:'mc',q:'Done experimenting. How do you switch back to your main profile?',o:['<code>hermes profile use default</code>','<code>hermes profile delete default</code>','<code>hermes config unset profile</code>','Reinstall Hermes'],a:0,why:'<code>use</code> sets the sticky default.'},
+ {t:'mc',q:'What does <code>--description</code> on a profile feed?',o:['The kanban orchestrator, which routes tasks by role','The Telegram bot bio','SOUL.md','The dashboard theme'],a:0,why:'Kanban hands tasks to profiles based on what each is good at.'},
+ {t:'match',q:'Match the flag.',p:[['--clone','setup files only'],['--clone-all','full state copy'],['--no-skills','empty, no bundled skills'],['--no-alias','skip wrapper script']]}
+ ]},
+{id:'config',name:'Config',sector:'Sector 5 · Root',
+ what:'<code>config.yaml</code> holds behavior: model, toolsets, timezone, platforms, cron and compression. <code>hermes config get</code> and <code>set</code> read and write dotted keys. <code>check</code> and <code>migrate</code> handle upgrades.',
+ rig:'Set your timezone first so cron jobs fire at your local time: <code>hermes config set timezone America/New_York</code>. After each update, run <code>hermes config check</code> to find new options.',
+ pay:'Edits you can repeat. <code>config set</code> gives the same result every time, with no YAML indentation mistakes.',
+ cmds:[['hermes config show','Full config'],['hermes config get model.default','One value'],['hermes config set <key> <val>','Set a value'],['hermes config unset <key>','Remove'],['hermes config check','Missing or outdated keys'],['hermes config path','Where the file is']],
+ qs:[
+ {t:'build',q:'Print just the default model name.',ans:['hermes','config','get','model.default'],x:['show','set'],why:'Dotted keys reach into nested blocks.'},
+ {t:'build',q:'Make cron jobs fire on New York time.',ans:['hermes','config','set','timezone','America/New_York'],x:['get','TZ='],why:'Cron schedules are read in the configured timezone.'},
+ {t:'tf',q:'Changes to config.yaml are picked up without restarting the gateway.',a:true,why:'Config reloads by itself. .env changes are the ones that need a restart.'},
+ {t:'mc',q:'After <code>hermes update</code>, how do you find new options the update added?',o:['<code>hermes config check</code>, then <code>migrate</code>','Delete config.yaml','Reinstall Hermes','<code>hermes logs update</code>'],a:0,why:'<code>check</code> reports and <code>migrate</code> writes the new keys.'},
+ {t:'match',q:'config.yaml or .env?',p:[['timezone','config.yaml'],['OPENROUTER_API_KEY','.env'],['model.default','config.yaml'],['TELEGRAM_BOT_TOKEN','.env']]}
+ ]},
+{id:'keys',name:'Keys',sector:'Sector 5 · Root',
+ what:'API keys and tokens live in <code>~/.hermes/.env</code>, never in config.yaml. <code>hermes auth</code> pools several keys per provider and rotates between them. <code>hermes secrets</code> can pull keys from Bitwarden or 1Password at startup.',
+ rig:'Put your provider key, for example <code>OPENROUTER_API_KEY</code>, and your <code>TELEGRAM_BOT_TOKEN</code> in .env. If you keep passwords in 1Password, use <code>hermes secrets op</code> so no key sits on disk.',
+ pay:'Your keys stay out of config files you might share or commit. With a pool, one exhausted free-tier key does not stop your agent.',
+ cmds:[['hermes config env-path','Where .env is'],['hermes auth add','Add a pooled key'],['hermes auth list','Pooled credentials'],['hermes auth reset <provider>','Clear exhaustion flags'],['hermes secrets bw','Bitwarden integration'],['hermes secrets op','1Password integration']],
+ qs:[
+ {t:'tf',q:'You can paste your API key into config.yaml under <code>model:</code> and it is just as safe.',a:false,why:'Secrets belong in .env or a secret manager. config.yaml gets shared, backed up and committed far more often.'},
+ {t:'mc',q:'One of your pooled keys hit its daily limit. What clears the "exhausted" flag?',o:['<code>hermes auth reset &lt;provider&gt;</code>','<code>hermes logout</code>','<code>hermes pairing revoke</code>','Edit state.db'],a:0,why:'<code>reset</code> clears exhaustion status for that provider\'s pool.'},
+ {t:'build',q:'Print where the .env file lives.',ans:['hermes','config','env-path'],x:['path','show'],why:'<code>config path</code> is config.yaml. <code>env-path</code> is .env.'},
+ {t:'mc',q:'You want keys pulled from 1Password at startup instead of stored in .env.',o:['<code>hermes secrets op</code>','<code>hermes auth add</code>','<code>hermes config set secrets</code>','<code>hermes import</code>'],a:0,why:'<code>hermes secrets</code> supports Bitwarden (<code>bw</code>) and 1Password (<code>op</code>).'},
+ {t:'match',q:'Match the key to what stops working without it.',p:[['TELEGRAM_BOT_TOKEN','your Telegram bot'],['OPENROUTER_API_KEY','OpenRouter models'],['OLLAMA_API_KEY','Ollama Cloud models'],['FIRECRAWL_API_KEY','web page scraping']]}
+ ]},
+{id:'system',name:'System',sector:'Sector 5 · Root',
+ what:'The system commands look after the install: <code>status</code>, <code>doctor</code>, <code>update</code>, <code>backup</code> and <code>import</code>, <code>security</code> (an OSV audit), <code>insights</code> (usage), <code>sessions prune</code>, and <code>dump</code> for support.',
+ rig:'Make it a habit: back up, update, then run doctor. When something feels off, start with <code>hermes status</code>. Once a month, run <code>hermes security</code> to audit your plugins and MCP servers.',
+ pay:'You can always undo. If an update breaks something, <code>hermes import</code> restores everything from your zip.',
+ cmds:[['hermes status','Every component at a glance'],['hermes doctor','Config + dependency check'],['hermes update','Pull latest Hermes'],['hermes security','Audit venv, plugins, MCP (OSV.dev)'],['hermes insights','Usage analytics'],['hermes dashboard','Web dashboard']],
+ qs:[
+ {t:'mc',q:'Safest order for an upgrade?',o:['backup → update → doctor','update → doctor → backup','doctor → update','update, then hope'],a:0,why:'Snapshot first so <code>hermes import</code> can roll you back.'},
+ {t:'build',q:'Audit your plugins and MCP servers for known vulnerabilities.',ans:['hermes','security'],x:['doctor','audit','--fix'],why:'It checks the venv, plugins and MCP servers against OSV.dev.'},
+ {t:'tf',q:'<code>hermes status</code> shows the state of all components in one place.',a:true,why:'That makes it a good first command when something feels off.'},
+ {t:'mc',q:'You want to see which models and tools you used this month.',o:['<code>hermes insights</code>','<code>hermes dump</code>','<code>hermes logs -n 9999</code>','<code>hermes journey</code>'],a:0,why:'Insights is the usage view. Journey is the timeline of learned skills and memories.'},
+ {t:'match',q:'Match the command.',p:[['dump','setup summary for support'],['checkpoints','prune saved rollbacks'],['sessions prune','trim old history'],['journey','skills + memories timeline']]}
+ ]}
+];
+
+/* ---------- state ---------- */
+const KEY='hermes-netrunner-v1';
+const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const fresh=()=>({xp:0,ed:0,streak:0,last:'',dayXp:0,day:today(),lv:{},seen:{},unlockAll:false,sound:true});
+let S=fresh();
+function load(seed){try{const r=seed||JSON.parse(localStorage.getItem(KEY)||'null');if(r)S=Object.assign(fresh(),r)}catch(e){}if(S.day!==today()){S.day=today();S.dayXp=0}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+const GOAL=30;
+
+/* ---------- sound ---------- */
+let AC=null;
+function blip(kind){if(!S.sound)return;try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const t=AC.currentTime;
+  const seq=kind==='good'?[[660,0],[990,.07]]:kind==='bad'?[[180,0],[140,.09]]:kind==='win'?[[523,0],[659,.09],[784,.18],[1046,.27]]:[[880,0]];
+  seq.forEach(([f,d])=>{const o=AC.createOscillator(),g=AC.createGain();o.type=kind==='bad'?'sawtooth':'square';o.frequency.value=f;g.gain.setValueAtTime(.0001,t+d);g.gain.exponentialRampToValueAtTime(.06,t+d+.01);g.gain.exponentialRampToValueAtTime(.0001,t+d+.12);o.connect(g).connect(AC.destination);o.start(t+d);o.stop(t+d+.14)})}catch(e){}}
+
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a};
+const strip=h=>h.replace(/<[^>]+>/g,'').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2600)}
+const unlocked=i=>S.unlockAll||i===0||(S.lv[UNITS[i-1].id]||0)>0||(S.lv[UNITS[i].id]||0)>0;
+
+/* ---------- home ---------- */
+function renderHome(){
+  $('#sStreak').textContent=S.streak;$('#sXp').textContent=S.xp;$('#sEd').textContent=S.ed;
+  $('#sndBtn').innerHTML=S.sound?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>';
+  const pct=Math.min(1,S.dayXp/GOAL);$('#ringArc').setAttribute('stroke-dashoffset',157*(1-pct));$('#ringTxt').textContent=S.dayXp;
+  $('#goalHead').textContent=pct>=1?'Daily uplink complete':`Daily uplink: ${S.dayXp} / ${GOAL} XP`;
+  $('#goalSub').textContent=pct>=1?`Streak secured for today. ${S.streak} day${S.streak===1?'':'s'} running.`:'One lesson is about 12 XP. Three a day keeps the streak alive and the chrome sharp.';
+  $('#unlockBtn').textContent=S.unlockAll?'Lock to path order':'Unlock all nodes';
+  const off=[0,70,100,70,0,-70,-100,-70];
+  let html='',sector='',curIdx=UNITS.findIndex((u,i)=>unlocked(i)&&!(S.lv[u.id]>0));
+  UNITS.forEach((u,i)=>{
+    if(u.sector!==sector){if(sector)html+='</div>';sector=u.sector;const [a,b]=u.sector.split(' · ');html+=`<div class="sector">${a} · <b>${b}</b></div><div class="path">`}
+    const lv=S.lv[u.id]||0,st=lv>0?'done':(i===curIdx?'cur':(unlocked(i)?'':'locked'));
+    html+=`<button class="node ${st}" data-i="${i}" style="transform:translateX(${off[i%8]}px)" aria-label="${u.name}, ${lv>0?'level '+lv+' of 3':st==='locked'?'locked':'start'}">
+      ${st==='cur'?'<span class="start-tag">JACK IN</span>':''}
+      <span class="hex">${svg(u.id)}</span>
+      <span class="lbl">${u.name}</span>
+      <span class="pips">${[1,2,3].map(n=>`<i class="${lv>=n?'on':''}"></i>`).join('')}</span>
+    </button>`});
+  html+='</div>';$('#map').innerHTML=html;
+  document.querySelectorAll('.node').forEach(n=>n.onclick=()=>openUnit(+n.dataset.i));
+}
+
+/* ---------- lesson engine ---------- */
+let L=null;
+function openUnit(i){
+  const u=UNITS[i];
+  if(!unlocked(i)){toast(`Locked. Finish ${UNITS[i-1].name} first, or unlock all nodes at the bottom.`);blip('bad');return}
+  L={u,i,queue:[],total:0,done:0,hearts:5,mistakes:0,retried:new Set(),stage:'brief',cur:null,answer:null};
+  L.queue=shuffle(u.qs.map((q,k)=>({...q,k})));L.total=L.queue.length;
+  $('#home').hidden=true;$('#lesson').hidden=false;document.body.style.overflow='hidden';
+  renderBrief();
+}
+function setBar(){$('#prog').style.width=(L.done/L.total*100)+'%';$('#hearts').innerHTML=[0,1,2,3,4].map(n=>`<span class="${n<L.hearts?'':'gone'}">${HEART}</span>`).join('')}
+function sheet(state,html,label,cls,enabled=true){const s=$('#sheet');s.className='sheet '+(state||'');$('#verdict').innerHTML=html||'';const b=$('#mainBtn');b.textContent=label;b.className='btn '+(cls||'');b.disabled=!enabled}
+
+function renderBrief(){
+  const u=L.u,lv=S.lv[u.id]||0;setBar();L.stage='brief';
+  $('#lbody').innerHTML=`
+    <p class="kicker">${u.sector} · node ${String(L.i+1).padStart(2,'0')} of 14 ${lv?'· level '+lv+'/3':''}</p>
+    <h1 class="unit-title"><span class="glitch" data-t="${u.name}">${u.name}</span></h1>
+    <div class="brief">
+      <div class="card what"><h3>What it is</h3><p>${u.what}</p></div>
+      <div class="card rig"><h3>How you would use it</h3><p>${u.rig}</p></div>
+      <div class="card pay"><h3>Payoff</h3><p>${u.pay}</p></div>
+      <div class="card shard"><h3>Datashard</h3><div class="tblwrap"><table>${u.cmds.map(c=>`<tr><td>${c[0].replace(/</g,'&lt;')}</td><td>${c[1]}</td></tr>`).join('')}</table></div></div>
+    </div>`;
+  $('#lbody').scrollTop=0;
+  sheet('',`<p class="why" style="color:var(--dim)">${L.total} challenges · 5 integrity · wrong answers come back at the end</p>`,'Jack in','',true);
+}
+
+function next(){
+  if(L.hearts<=0)return endFail();
+  if(!L.queue.length)return endWin();
+  L.cur=L.queue.shift();L.answer=null;L.stage='ask';setBar();
+  const q=L.cur;let h='';
+  const kick={mc:'Choose one',tf:'True or false',build:'Build the command',match:'Link the pairs'}[q.t];
+  h+=`<p class="kicker">${kick}${L.retried.has(q.k)?' · retry':''}</p><h2 class="q">${q.q}</h2>`;
+  if(q.t==='mc'){L.order=shuffle(q.o.map((_,j)=>j));h+=`<div class="opts" role="radiogroup">${L.order.map((j,n)=>`<button class="opt" role="radio" aria-checked="false" data-j="${j}"><span class="k">${n+1}</span><span>${q.o[j]}</span></button>`).join('')}</div>`}
+  if(q.t==='tf'){h+=`<div class="opts tf" role="radiogroup"><button class="opt" data-j="1"><span class="k">1</span><span>True</span></button><button class="opt" data-j="0"><span class="k">2</span><span>False</span></button></div>`}
+  if(q.t==='build'){L.bank=shuffle([...q.ans,...(q.x||[])]).map((w,id)=>({w,id}));L.line=[];h+=`<div class="term" id="term" aria-live="polite"></div><div class="bank" id="bank">${L.bank.map(b=>`<button class="tok" data-id="${b.id}">${b.w}</button>`).join('')}</div>`}
+  if(q.t==='match'){const L1=shuffle(q.p.map((p,j)=>j)),R=shuffle(q.p.map((p,j)=>j));L.pick=null;L.matched=0;L.matchMiss=false;
+    h+=`<div class="match">${L1.map((j,n)=>`<button class="opt" data-side="l" data-j="${j}">${q.p[j][0]}</button><button class="opt" data-side="r" data-j="${R[n]}">${q.p[R[n]][1]}</button>`).join('')}</div>`}
+  $('#lbody').innerHTML=h;$('#lbody').scrollTop=0;
+  sheet('','', 'Check','',false);
+  if(q.t==='mc'||q.t==='tf')document.querySelectorAll('.opts .opt').forEach(b=>b.onclick=()=>{if(L.stage!=='ask')return;document.querySelectorAll('.opts .opt').forEach(x=>{x.classList.remove('sel');x.setAttribute('aria-checked','false')});b.classList.add('sel');b.setAttribute('aria-checked','true');L.answer=+b.dataset.j;$('#mainBtn').disabled=false;blip('tap')});
+  if(q.t==='build')bindBuild();
+  if(q.t==='match')bindMatch();
+}
+function bindBuild(){
+  const draw=()=>{$('#term').innerHTML=L.line.length?'<span class="ps">$</span>'+L.line.map(id=>`<button class="tok" data-id="${id}">${L.bank[id].w}</button>`).join(''):'';
+    document.querySelectorAll('#bank .tok').forEach(t=>t.classList.toggle('used',L.line.includes(+t.dataset.id)));
+    document.querySelectorAll('#term .tok').forEach(t=>t.onclick=()=>{if(L.stage!=='ask')return;L.line=L.line.filter(x=>x!==+t.dataset.id);draw();blip('tap')});
+    $('#mainBtn').disabled=!L.line.length};
+  document.querySelectorAll('#bank .tok').forEach(t=>t.onclick=()=>{if(L.stage!=='ask')return;const id=+t.dataset.id;if(!L.line.includes(id)){L.line.push(id);draw();blip('tap')}});
+  draw();
+}
+function bindMatch(){
+  const q=L.cur;
+  document.querySelectorAll('.match .opt').forEach(b=>b.onclick=()=>{
+    if(b.classList.contains('ok'))return;
+    if(!L.pick||L.pick.dataset.side===b.dataset.side){document.querySelectorAll('.match .opt').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');L.pick=b;blip('tap');return}
+    const a=L.pick;L.pick=null;a.classList.remove('sel');
+    if(a.dataset.j===b.dataset.j){a.classList.add('ok');b.classList.add('ok');L.matched++;blip('good');
+      if(L.matched===q.p.length){L.stage='fb';L.done++;setBar();sheet('good','<h4>Linked</h4><p class="why">All pairs connected.</p>','Continue','cy')}}
+    else{[a,b].forEach(x=>{x.classList.remove('bad');void x.offsetWidth;x.classList.add('bad')});L.matchMiss=true;blip('bad')}
+  });
+}
+function check(){
+  const q=L.cur;let ok=false,correctTxt='';
+  if(q.t==='mc'){ok=L.answer===q.a;correctTxt=q.o[q.a];document.querySelectorAll('.opts .opt').forEach(b=>{const j=+b.dataset.j;if(j===q.a)b.classList.add('right');else if(j===L.answer)b.classList.add('wrong')})}
+  if(q.t==='tf'){ok=(L.answer===1)===q.a;correctTxt=q.a?'True':'False';document.querySelectorAll('.opts .opt').forEach(b=>{const j=+b.dataset.j;if((j===1)===q.a)b.classList.add('right');else if(j===L.answer)b.classList.add('wrong')})}
+  if(q.t==='build'){const got=L.line.map(id=>L.bank[id].w).join(' ');ok=got===q.ans.join(' ');correctTxt='<code>'+q.ans.join(' ')+'</code>'}
+  L.stage='fb';
+  if(ok){L.done++;blip('good');sheet('good',`<h4>${['Clean hack','Access granted','Nova','Preem'][Math.random()*4|0]}</h4><p class="why">${q.why||''}</p>`,'Continue','cy')}
+  else{L.hearts--;L.mistakes++;blip('bad');if(!L.retried.has(q.k)){L.retried.add(q.k);L.queue.push(q)}else{L.done++}
+    sheet('bad',`<h4>ICE hit · −1 integrity</h4><p class="why">Answer: ${correctTxt}. ${q.why||''}</p>`,'Got it','mg')}
+  setBar();
+}
+$('#mainBtn').onclick=()=>{
+  if(!L)return;
+  if(L.stage==='brief'){S.seen[L.u.id]=1;save();return next()}
+  if(L.stage==='ask')return check();
+  if(L.stage==='fb')return next();
+  if(L.stage==='end')return closeLesson();
+};
+function endWin(){
+  L.stage='end';const u=L.u;const perfect=L.mistakes===0;const xp=10+(perfect?5:0)+L.hearts;const ed=perfect?15:8;
+  const prev=S.lv[u.id]||0;S.lv[u.id]=Math.min(3,prev+1);S.xp+=xp;S.ed+=ed;
+  const t=today();if(S.day!==t){S.day=t;S.dayXp=0}
+  const before=S.dayXp;S.dayXp+=xp;
+  if(before<GOAL&&S.dayXp>=GOAL){const y=new Date();y.setDate(y.getDate()-1);const ys=y.getFullYear()+'-'+String(y.getMonth()+1).padStart(2,'0')+'-'+String(y.getDate()).padStart(2,'0');S.streak=(S.last===ys||S.last===t)?S.streak+(S.last===t?0:1):1;S.last=t}
+  save();blip('win');$('#prog').style.width='100%';
+  const nxt=UNITS[L.i+1];
+  $('#lbody').innerHTML=`<div class="end">
+    <p class="kicker">${u.name} · level ${S.lv[u.id]}/3</p>
+    <h1 class="big cy">${perfect?'Flawless<br>run':'Node<br>breached'}</h1>
+    <div class="tiles"><div class="tile"><small>XP</small><b>+${xp}</b></div><div class="tile"><small>Eddies</small><b>+${ed}</b></div><div class="tile"><small>Integrity</small><b>${L.hearts}/5</b></div></div>
+    <p>${perfect?'No ICE touched you.':`${L.mistakes} mistake${L.mistakes===1?'':'s'}, all re-run until clean.`} ${S.lv[u.id]<3?'Replay this node to push it to level '+(S.lv[u.id]+1)+'.':'This node is fully chromed.'} ${nxt&&prev===0?nxt.name+' is now unlocked.':''}</p>
+  </div>`;
+  sheet('','','Back to the map','',true);
+}
+function endFail(){
+  L.stage='end';blip('bad');
+  $('#lbody').innerHTML=`<div class="end">
+    <p class="kicker">${L.u.name} · integrity 0/5</p>
+    <h1 class="big mg">Flat<br>lined</h1>
+    <p>The ICE won this round. Read the datashard again, then jack back in. Each attempt shuffles the questions.</p>
+    <div class="row"><button class="btn ghost" id="reBrief">Reread briefing</button></div>
+  </div>`;
+  $('#reBrief').onclick=()=>openUnit(L.i);
+  sheet('','','Back to the map','mg',true);
+}
+function closeLesson(){L=null;$('#lesson').hidden=true;$('#home').hidden=false;document.body.style.overflow='';renderHome()}
+$('#quitBtn').onclick=closeLesson;
+
+/* keyboard: 1-4 pick, Enter = main button */
+document.addEventListener('keydown',e=>{
+  if(!L||$('#lesson').hidden)return;
+  if(e.key==='Enter'&&!$('#mainBtn').disabled&&document.activeElement.id!=='mainBtn'){e.preventDefault();$('#mainBtn').click();return}
+  if(L.stage==='ask'&&/^[1-4]$/.test(e.key)){const b=document.querySelectorAll('.opts .opt')[+e.key-1];if(b)b.click()}
+  if(e.key==='Escape')closeLesson();
+});
+
+$('#sndBtn').onclick=()=>{S.sound=!S.sound;save();renderHome();blip('tap')};
+$('#unlockBtn').onclick=()=>{S.unlockAll=!S.unlockAll;save();renderHome();toast(S.unlockAll?'All 14 nodes unlocked.':'Path order restored.')};
+let resetArm=false;
+$('#resetBtn').onclick=()=>{if(!resetArm){resetArm=true;$('#resetBtn').textContent='Tap again to wipe';setTimeout(()=>{resetArm=false;$('#resetBtn').textContent='Reset progress'},3000);return}
+  S=fresh();save();resetArm=false;$('#resetBtn').textContent='Reset progress';renderHome();toast('Progress wiped.')};
+
+/* boot */
+function start(data){load(data&&data.S);renderHome()}
+window.claude?.hot?.snapshot?.(()=>({S}));
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+</script>

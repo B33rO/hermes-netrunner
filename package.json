@@ -1,0 +1,21 @@
+{
+  "name": "hermes-netrunner",
+  "productName": "Hermes Netrunner",
+  "version": "1.0.0",
+  "description": "A cyberpunk, Duolingo-style game that teaches every feature of Hermes Agent",
+  "author": "B33rO",
+  "license": "MIT",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "sync": "node scripts/sync.js",
+    "start": "node scripts/sync.js && electron .",
+    "pack": "node scripts/sync.js && node scripts/pack.js",
+    "installer": "node scripts/installer.js",
+    "dist": "npm run pack && npm run installer"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^45.0.0"
+  }
+}
