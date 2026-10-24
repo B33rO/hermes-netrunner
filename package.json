@@ -1,8 +1,8 @@
 {
   "name": "hermes-netrunner",
   "productName": "Hermes Netrunner",
-  "version": "1.0.0",
-  "description": "A cyberpunk, Duolingo-style game that teaches every feature of Hermes Agent",
+  "version": "1.1.0",
+  "description": "A Duolingo-style game that teaches every feature of Hermes Agent",
   "author": "B33rO",
   "license": "MIT",
   "private": true,

@@ -28,11 +28,11 @@ function onScreen(b) {
 function createWindow() {
   const saved = readBounds();
   win = new BrowserWindow({
-    ...(onScreen(saved) ? saved : { width: 860, height: 980 }),
+    ...(onScreen(saved) ? saved : { width: 1280, height: 860 }),
     minWidth: 420,
     minHeight: 600,
     show: false,
-    backgroundColor: '#07040f',
+    backgroundColor: '#041c1c',
     title: 'Hermes Netrunner',
     icon: path.join(__dirname, 'build', 'icon.ico'),
     autoHideMenuBar: true,

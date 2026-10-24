@@ -29,7 +29,7 @@ const ROOT = path.join(__dirname, '..');
     overwrite: true,
     prune: true,
     // only the runtime files go into the package
-    ignore: [/^\/(dist|installer|scripts|fonts|src|node_modules\/\.cache)(\/|$)/, /^\/build\/(?!icon\.ico$)/, /\.md$/, /^\/LICENSE$/, /^\/\.git/],
+    ignore: [/^\/(dist|installer|scripts|src|node_modules\/\.cache)(\/|$)/, /^\/build\/(?!icon\.ico$)/, /\.md$/, /^\/LICENSE$/, /^\/\.git/],
   });
   // The game UI is English-only: drop Chromium's other UI locales (~48 MB).
   const locales = path.join(out, 'locales');
